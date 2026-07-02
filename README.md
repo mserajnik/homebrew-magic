@@ -14,7 +14,7 @@ This tap packages [Forge][forge] and [XMage][xmage] into macOS apps,
 distributed as Homebrew casks, offering a more convenient way to install,
 update, and run these projects than the official methods. It features:
 
-- __Forge in all three modes__: Classic, Adventure Mode, and the Adventure
+- __Forge in all three modes__: Desktop, Adventure Mode, and the Adventure
   Editor, each installed as its own app.
 - __XMage client and server, as separate apps__: the client always plays on a
   server; connect to a public server to play online, or run the bundled local
@@ -64,7 +64,7 @@ brew install --cask mserajnik/magic/forge
 
 This installs three apps:
 
-- __Forge__: the Classic rules engine.
+- __Forge__: the original desktop rules engine.
 - __Forge Adventure Mode__: the Shandalar-style single-player mode.
 - __Forge Adventure Editor__: the Adventure Mode content editor.
 

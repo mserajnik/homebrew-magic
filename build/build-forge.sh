@@ -7,9 +7,9 @@
 # upstream Forge release.
 #
 # The upstream `tar.bz2` distribution (game resources plus the three fat jars
-# for Classic, Adventure Mode, and the Adventure Editor) is downloaded and
+# for Desktop, Adventure Mode, and the Adventure Editor) is downloaded and
 # packaged with jpackage into a single `Forge.app` that bundles a Java runtime.
-# Classic is the main launcher; Adventure Mode and the Adventure Editor are
+# Desktop is the main launcher; Adventure Mode and the Adventure Editor are
 # added as extra jpackage launchers that share the one runtime. Two thin
 # sibling bundles, `Forge Adventure Mode.app` and `Forge Adventure Editor.app`,
 # exec into those extra launchers so each mode gets its own Dock and Spotlight
@@ -452,7 +452,7 @@ adhoc_sign_deep "$app"
 adhoc_sign "$app_out/Forge Adventure Mode.app"
 adhoc_sign "$app_out/Forge Adventure Editor.app"
 
-# Smoke-test the signed Classic launcher headlessly. `sim` is Forge's
+# Smoke-test the signed desktop launcher headlessly. `sim` is Forge's
 # simulation mode: it loads the full card database from `res/` and exits
 # without a window. That it reads cards confirms what nothing else exercises:
 # the bundled runtime starts, the launcher's classpath isolation holds, and
@@ -462,7 +462,7 @@ adhoc_sign "$app_out/Forge Adventure Editor.app"
 # takes `user.home` from the account, not `$HOME`, so both need redirecting.
 # Adventure Mode needs an OpenGL context a runner lacks, so it cannot be
 # covered.
-echo "Smoke-testing the Classic launcher (headless card load)."
+echo "Smoke-testing the desktop launcher (headless card load)."
 smoke_home="$work_dir/smoke-home"
 smoke_log="$work_dir/smoke.log"
 mkdir -p "$smoke_home"
@@ -475,7 +475,7 @@ while kill -0 "$smoke_pid" 2>/dev/null; do
   if [[ "$i" -ge 180 ]]; then
     kill -9 "$smoke_pid" 2>/dev/null || true
     cat "$smoke_log" >&2
-    fail 'Classic launcher smoke test timed out.'
+    fail 'Desktop launcher smoke test timed out.'
   fi
   sleep 1
 done
@@ -483,7 +483,7 @@ done
 # is the real signal that the database loaded from `res/`.
 grep -qE 'Read cards: [1-9]' "$smoke_log" || {
   cat "$smoke_log" >&2
-  fail "Classic launcher did not load any cards from 'res/'."
+  fail "Desktop launcher did not load any cards from 'res/'."
 }
 echo "Smoke test passed."
 
