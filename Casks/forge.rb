@@ -3,7 +3,7 @@
 
 cask "forge" do
   version "2.0.13"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "cb3d989baa359160241564a1c2a642d0f277a06377705492d84ab01d41700293"
 
   url "https://github.com/mserajnik/homebrew-magic/releases/download/forge-#{version}/Forge-#{version}-arm64.dmg"
   name "Forge"

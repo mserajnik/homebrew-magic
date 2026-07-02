@@ -3,7 +3,7 @@
 
 cask "xmage" do
   version "1.4.60V2"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "3326e43d08fab9b858518bfa249d9b2d91988f4d7aa0090d2193734efa8d1665"
 
   url "https://github.com/mserajnik/homebrew-magic/releases/download/xmage-#{version}/XMage-#{version}-arm64.dmg"
   name "XMage"

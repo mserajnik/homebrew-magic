@@ -3,7 +3,7 @@
 
 cask "forge@snapshot" do
   version "2.0.14-SNAPSHOT-07.01"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "fc51f705351a587b9310a869bca6ed3992938f6de5c937e5899bde53bc98e86a"
 
   url "https://github.com/mserajnik/homebrew-magic/releases/download/forge-snapshot/Forge-#{version}-arm64.dmg"
   name "Forge"
