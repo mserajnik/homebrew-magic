@@ -1,0 +1,40 @@
+version = 1
+
+[[annotations]]
+path = [".github/logo.webp", "README.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Michael Serajnik <https://github.com/mserajnik>"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+[[annotations]]
+path = [
+  ".dprint.jsonc",
+  ".editorconfig",
+  ".gitignore",
+  ".shellcheckrc",
+  "build/xmage-lib-baseline.txt",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Michael Serajnik <https://github.com/mserajnik>"
+SPDX-License-Identifier = "CC0-1.0"
+
+# The patches are diffs of upstream source, so they carry each project's
+# license; the modified lines are by the tap maintainer. Forge is GPL-3.0,
+# XMage is MIT.
+[[annotations]]
+path = "build/patches/forge/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = [
+  "The Forge project contributors <https://github.com/Card-Forge/forge>",
+  "2026 Michael Serajnik <https://github.com/mserajnik>",
+]
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = "build/patches/xmage/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = [
+  "The XMage project contributors <https://github.com/magefree/mage>",
+  "2026 Michael Serajnik <https://github.com/mserajnik>",
+]
+SPDX-License-Identifier = "MIT"

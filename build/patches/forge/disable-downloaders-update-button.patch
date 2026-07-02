@@ -1,0 +1,10 @@
+--- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuDownloaders.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuDownloaders.java
+@@ -82,6 +82,7 @@
+         pnlContent.add(_makeLabel("Bulk downloaders have been disabled. Please use auto-downloader for now."), constraintsLBL);
+ 
+         // Github actions now uploading the latest version predictably. So we should be able to use this again.
++        btnCheckForUpdates.setEnabled(false); // Disable update button for Homebrew distribution.
+         pnlContent.add(btnCheckForUpdates, constraintsBTN);
+         pnlContent.add(_makeLabel(localizer.getMessage("lblCheckForUpdates")), constraintsLBL);
+ 

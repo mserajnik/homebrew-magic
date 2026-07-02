@@ -1,0 +1,10 @@
+--- a/forge-gui/src/main/java/forge/download/AutoUpdater.java
++++ b/forge-gui/src/main/java/forge/download/AutoUpdater.java
+@@ -72,6 +72,7 @@
+     }
+ 
+     private boolean verifyUpdateable() {
++        if (true) return false; // Disable auto-updates for Homebrew distribution.
+         if (buildVersion.contains("GIT")) {
+             //return false;
+         }

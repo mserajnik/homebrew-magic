@@ -1,0 +1,174 @@
+# SPDX-FileCopyrightText: 2026 Michael Serajnik <https://github.com/mserajnik>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Build
+
+on:
+  # Rebuild daily to pick up new releases.
+  schedule:
+    - cron: 0 0 * * *
+  push:
+    branches:
+      - master
+    paths:
+      - .github/scripts/**
+      - .github/workflows/build.yaml
+      - build/**
+  pull_request:
+    branches:
+      - master
+    paths:
+      - .github/scripts/**
+      - .github/workflows/build.yaml
+      - build/**
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        description: What should be built?
+        options:
+          - "Everything"
+          - "Both Forge channels"
+          - "Forge stable only"
+          - "Forge snapshot only"
+          - "XMage only"
+        default: "Everything"
+
+# Serialize concurrent runs so they cannot race on the cask bump commit.
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      any: ${{ steps.detect.outputs.any }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+      build_forge_stable: ${{ steps.detect.outputs.build_forge_stable }}
+      forge_stable_version: ${{ steps.detect.outputs.forge_stable_version }}
+      build_forge_snapshot: ${{ steps.detect.outputs.build_forge_snapshot }}
+      forge_snapshot_version: ${{ steps.detect.outputs.forge_snapshot_version }}
+      build_xmage: ${{ steps.detect.outputs.build_xmage }}
+      xmage_version: ${{ steps.detect.outputs.xmage_version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Resolve the upstream releases, decide which channels need (re)building,
+      # and emit a build matrix keyed by `app` and `channel`.
+      - name: Detect builds
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.target || 'all' }}
+          EVENT: ${{ github.event_name }}
+        run: ./.github/scripts/detect-builds.sh
+
+  build:
+    name: Build ${{ matrix.app }} ${{ matrix.channel }}
+    needs: setup
+    if: ${{ needs.setup.outputs.any == 'true' }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Install ImageMagick
+        run: brew install imagemagick
+
+      # Pass the matrix values through the environment rather than
+      # interpolating `${{ ... }}` into the script, so an upstream-derived value
+      # (notably the XMage asset URL) can never be substituted into the shell.
+      - name: Build app bundles and disk image
+        env:
+          APP: ${{ matrix.app }}
+          CHANNEL: ${{ matrix.channel }}
+          VERSION: ${{ matrix.version }}
+          REF: ${{ matrix.ref }}
+          URL: ${{ matrix.url }}
+        run: |
+          if [[ "$APP" == xmage ]]; then
+            bash build/build-xmage.sh \
+              --channel "$CHANNEL" \
+              --version "$VERSION" \
+              --ref "$REF" \
+              --url "$URL" \
+              --out dist
+          else
+            bash build/build-forge.sh \
+              --channel "$CHANNEL" \
+              --version "$VERSION" \
+              --ref "$REF" \
+              --url "$URL" \
+              --out dist
+          fi
+
+      - name: Upload disk image
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.app }}-${{ matrix.channel }}-arm64
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+
+  release:
+    name: Publish and bump
+    needs: [setup, build]
+    # Run even if a build job failed so a broken channel does not block
+    # publishing the channel that did build;
+    # `.github/scripts/publish-releases.sh` skips any channel whose disk image
+    # is missing. Never publish from a pull request.
+    if: ${{ !cancelled() && needs.setup.outputs.any == 'true' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Publish releases and bump casks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_FORGE_STABLE: ${{ needs.setup.outputs.build_forge_stable }}
+          FORGE_STABLE_VERSION: ${{ needs.setup.outputs.forge_stable_version }}
+          BUILD_FORGE_SNAPSHOT: ${{ needs.setup.outputs.build_forge_snapshot }}
+          FORGE_SNAPSHOT_VERSION: ${{ needs.setup.outputs.forge_snapshot_version }}
+          BUILD_XMAGE: ${{ needs.setup.outputs.build_xmage }}
+          XMAGE_VERSION: ${{ needs.setup.outputs.xmage_version }}
+        run: ./.github/scripts/publish-releases.sh
+
+      # Commit the bumped casks via the GraphQL API so the commit is signed
+      # (Verified) server-side; a plain push over `GITHUB_TOKEN` would be
+      # unsigned.
+      - name: Commit cask updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+          REPO_NWO: ${{ github.repository }}
+        run: |
+          ./.github/scripts/commit-via-api.sh "Update casks" \
+            Casks/forge.rb Casks/forge@snapshot.rb Casks/xmage.rb

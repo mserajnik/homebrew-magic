@@ -1,0 +1,10 @@
+--- a/forge-gui-mobile-dev/src/forge/app/GameLauncher.java
++++ b/forge-gui-mobile-dev/src/forge/app/GameLauncher.java
+@@ -144,6 +144,7 @@
+ 
+         config.setHdpiMode(HdpiMode.Logical);
+ 
++        if (SharedLibraryLoader.isMac) org.lwjgl.glfw.GLFW.glfwInitHint(org.lwjgl.glfw.GLFW.GLFW_COCOA_CHDIR_RESOURCES, org.lwjgl.glfw.GLFW.GLFW_FALSE); // Keep working directory for Homebrew distribution.
+         new Lwjgl3Application(start, config);
+     }
+ 

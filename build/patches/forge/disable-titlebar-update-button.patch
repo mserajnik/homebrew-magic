@@ -1,0 +1,10 @@
+--- a/forge-gui-desktop/src/main/java/forge/view/FTitleBarBase.java
++++ b/forge-gui-desktop/src/main/java/forge/view/FTitleBarBase.java
+@@ -432,6 +432,7 @@
+             setToolTipText(Localizer.getInstance().getMessage("btnCheckForUpdates"));
+             setPreferredSize(new Dimension(160, 25));
+             updateVisibility();
++            setEnabled(false); // Disable update button for Homebrew distribution.
+         }
+ 
+         @Override

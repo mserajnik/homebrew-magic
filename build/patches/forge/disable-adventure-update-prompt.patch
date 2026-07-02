@@ -1,0 +1,10 @@
+--- a/forge-gui-mobile/src/forge/assets/AssetsDownloader.java
++++ b/forge-gui-mobile/src/forge/assets/AssetsDownloader.java
+@@ -108,6 +108,7 @@
+                     verifyUpdatable = !StringUtils.isEmpty(version) && !versionString.equals(version);
+                 }
+ 
++                verifyUpdatable = false; // Disable update prompt for Homebrew distribution.
+                 if (verifyUpdatable) {
+                     Forge.getSplashScreen().prepareForDialogs();
+ 
