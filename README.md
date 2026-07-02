@@ -41,8 +41,18 @@ update, and run these projects than the official methods. It features:
 ## Install
 
 Since Homebrew 6.0.0, casks from non-official taps must be explicitly
-[trusted][homebrew-tap-trust] before Homebrew loads them; installing by the
-fully-qualified name automatically trusts that cask.
+[trusted][homebrew-tap-trust] before Homebrew loads them. Trust this tap once:
+
+```sh
+brew trust mserajnik/magic
+```
+
+> [!IMPORTANT]
+> Installing a cask by its fully-qualified name trusts only that one cask,
+> which is enough for XMage. Each Forge cask, however, declares
+> `conflicts_with` the other, so installing either one makes Homebrew load the
+> other to check the conflict, and loading a cask from an untrusted tap fails.
+> Trusting the whole tap once covers all three casks.
 
 ### Forge
 
