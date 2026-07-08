@@ -43,6 +43,8 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$script_dir/lib.sh"
+# shellcheck source-path=SCRIPTDIR
+source "$script_dir/xmage-config-merge.sh"
 
 BUNDLE_ID="${BUNDLE_ID_PREFIX:-at.mser}.xmage"
 VENDOR="${VENDOR:-Michael Serajnik}"
@@ -163,10 +165,14 @@ package_component() {
 #   so stale files must go. Used for the server's `plugins`, whose jar names
 #   embed the XMage version; a plain merge would leave the previous version's
 #   jars beside the new ones and confuse plugin loading.
-# - c  Configuration directory: refresh the static defaults but preserve a
-#   user-edited `config.xml`. Used for the server's `config` so its port,
-#   authentication, and AI settings survive an upgrade while shipped defaults
-#   still update.
+# - c  Configuration directory: install the shipped defaults wholesale, then
+#   merge the operator-editable `<server>` element from any existing
+#   `config.xml` back on top (see `merge_server_config`). Used for the server's
+#   `config` so its port, authentication, and AI settings survive an upgrade
+#   while the version-stamped plugin references always come fresh from the
+#   release, matching the replaced `plugins` (policy `r`); preserving the whole
+#   file instead would pin stale references at jars a later version no longer
+#   ships.
 #
 # Runtime data the app creates itself (the card database under `db/`, logs,
 # `gamesHistory/`, `saved/`) is never a listed item, so no policy ever touches
@@ -176,9 +182,15 @@ write_seeding_script() {
   local out="$1" data_dir="$2" target="$3"
   shift 3
   local items="$*"
-  cat >"$out" <<'WRAP'
-#!/bin/sh
-
+  # Embed the shared configuration-merge helpers so the shipped seeding script
+  # runs the exact transform the build's round-trip guard verifies (single
+  # source of truth); the client never uses policy `c`, so for it they are just
+  # unused.
+  {
+    printf '#!/bin/sh\n\n'
+    cat "$script_dir/xmage-config-merge.sh"
+    printf '\n'
+    cat <<'WRAP'
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -207,16 +219,21 @@ seed() {
         /usr/bin/ditto "$src" "$dst"
         ;;
       c)
-        # Refresh the shipped configuration defaults without ever overwriting a
-        # user-edited `config.xml`: stage the defaults, drop `config.xml` from
-        # the staging copy when the user already has one, then merge the rest.
-        # The user's file is never written, so no crash can revert it; a fresh
-        # install (no `config.xml` yet) gets the default like the other files.
+        # Install the shipped configuration defaults wholesale, then carry the
+        # operator's `<server>` element from any existing `config.xml` across:
+        # stage the defaults; when the user already has a `config.xml`, merge
+        # its `<server>` values onto the staged default before copying it into
+        # place. The plugin references come fresh from the release, so an
+        # upgrade cannot leave them pointing at a jar the replaced `plugins` no
+        # longer ships. A fresh install (no `config.xml` yet) just takes the
+        # shipped default like the other files.
         staging="$workdir/.config-staging"
         rm -rf "$staging"
         /usr/bin/ditto "$src" "$staging"
         if [ -f "$dst/config.xml" ]; then
-          rm -f "$staging/config.xml"
+          merge_server_config "$staging/config.xml" "$dst/config.xml" \
+            "$staging/config.xml.merged"
+          mv "$staging/config.xml.merged" "$staging/config.xml"
         fi
         /usr/bin/ditto "$staging" "$dst"
         rm -rf "$staging"
@@ -253,6 +270,7 @@ fi
 cd "$workdir"
 exec "$here/__TARGET__" "$@"
 WRAP
+  } >"$out"
   # The data directory, target, and items contain no `|`, so it is a safe
   # delimiter; the version is already validated to a restricted character set.
   sed -i '' \
@@ -262,6 +280,138 @@ WRAP
     -e "s|__TARGET__|$target|" \
     "$out"
   chmod +x "$out"
+}
+
+# Echoes the given file with every plugin jar reference rewritten to the given
+# version. The single place the plugin jar-reference grammar is encoded for the
+# "stale" configuration the build guard and the upgrade smoke test both
+# synthesize.
+stub_jar_versions() {
+  local file="$1" version="$2"
+  sed -E "s/(jar=\"mage-[A-Za-z-]+-)[0-9][0-9.]*[0-9](\.jar\")/\1$version\2/g" "$file"
+}
+
+# Sets one attribute on the configuration's `<server>` element to a literal
+# value, scoped to that element. Used only by the build guard to inject probe
+# values (controlled, backslash-free), so it does not guard against `awk -v`
+# escape processing the way the runtime merge does.
+set_server_attr() {
+  local file="$1" name="$2" value="$3"
+  awk -v name="$name" -v value="$value" '
+    $0 ~ /<server[[:space:]>]/ { inblk = 1 }
+    {
+      if (inblk) {
+        out = ""
+        s = $0
+        while (match(s, /[A-Za-z_][A-Za-z0-9_]*="[^"]*"/)) {
+          tok = substr(s, RSTART, RLENGTH)
+          eq = index(tok, "=")
+          if (substr(tok, 1, eq - 1) == name) tok = name "=\"" value "\""
+          out = out substr(s, 1, RSTART - 1) tok
+          s = substr(s, RSTART + RLENGTH)
+        }
+        print out s
+        t = $0
+        gsub(/"[^"]*"/, "", t)
+        if (index(t, ">")) inblk = 0
+      } else print
+    }
+  ' "$file" >"$file.tmp"
+  mv "$file.tmp" "$file"
+}
+
+# Fails the build unless the configuration seeding transform still holds for
+# this release. Asserts the configuration-format invariants
+# `merge_server_config` depends on (exactly one `<server>` element; plugin
+# references versioned `mage-...-<version>.jar`, all at the version the
+# `plugins/` jars carry), then round-trips a synthetic stale configuration
+# through the real merge: a configuration the merge builds from a stale user
+# copy (old-version references plus probe `<server>` edits) must equal the
+# fresh configuration with only those probes applied. That proves the merge
+# takes content and references from the fresh release while carrying every
+# operator `<server>` value across. It is deterministic and needs no JVM, so an
+# upstream configuration-format change fails here rather than silently breaking
+# a user's next upgrade.
+verify_config_transform() {
+  local cfg="$1" plugins_dir="$2" work="$3"
+  mkdir -p "$work"
+
+  [[ "$(grep -c '<server[[:space:]>]' "$cfg")" -eq 1 ]] ||
+    fail "'config.xml' no longer has exactly one '<server>' element; the seeding merge assumptions changed."
+
+  local cfg_vers plug_vers
+  cfg_vers="$(grep -oE 'jar="mage-[A-Za-z-]+-[0-9][0-9.]*[0-9]\.jar"' "$cfg" |
+    grep -oE '[0-9][0-9.]*[0-9]' | LC_ALL=C sort -u)"
+  [[ -n "$cfg_vers" ]] ||
+    fail "No versioned plugin jar references in 'config.xml'; upstream configuration format changed."
+  [[ "$(printf '%s\n' "$cfg_vers" | grep -c .)" -eq 1 ]] ||
+    fail "'config.xml' plugin references span multiple versions: $(printf '%s' "$cfg_vers" | tr '\n' ' ')."
+  plug_vers="$(find "$plugins_dir" -maxdepth 1 -name 'mage-*.jar' -exec basename {} \; |
+    grep -oE '[0-9][0-9.]*[0-9]' | LC_ALL=C sort -u)"
+  [[ "$cfg_vers" == "$plug_vers" ]] ||
+    fail "'config.xml' plugin version ($cfg_vers) does not match the 'plugins/' jars ($plug_vers)."
+
+  # Probe several `<server>` attributes so the round-trip proves each is
+  # carried. For each, first confirm the attribute exists in the `<server>`
+  # element, so an upstream rename fails here with a clear message rather than
+  # misleadingly downstream (e.g. the upgrade smoke test edits
+  # `maxAiOpponents`). The check is element-scoped, and diffs `$check` against
+  # a baseline produced by the same `set_server_attr` no-op (not the raw
+  # `$cfg`): that pass rewrites the file with awk, which appends a trailing
+  # newline, so a raw diff would always differ and pass the check
+  # unconditionally when `config.xml` lacks one.
+  local expected="$work/expected.xml" stale="$work/stale.xml" merged="$work/merged.xml"
+  local check="$work/probe-check.xml" base="$work/probe-base.xml"
+  local probes=(serverName=ROUNDTRIP_PROBE port=65500 maxAiOpponents=7 maxSecondsIdle=321)
+  local p
+  cp "$cfg" "$base"
+  set_server_attr "$base" __rt_absent__ x
+  cp "$cfg" "$expected"
+  for p in "${probes[@]}"; do
+    cp "$cfg" "$check"
+    set_server_attr "$check" "${p%%=*}" __RT_PROBE_EXISTS__
+    ! diff "$base" "$check" >/dev/null ||
+      fail "Round-trip probe attribute '${p%%=*}' not found in the '<server>' element; upstream renamed the schema."
+    set_server_attr "$expected" "${p%%=*}" "${p#*=}"
+  done
+  stub_jar_versions "$cfg" 0.0.0 >"$stale"
+  for p in "${probes[@]}"; do set_server_attr "$stale" "${p%%=*}" "${p#*=}"; done
+  merge_server_config "$cfg" "$stale" "$merged"
+  diff "$expected" "$merged" >/dev/null ||
+    fail "Configuration seeding merge round-trip mismatch; the transform no longer reproduces the shipped configuration (upstream configuration format may have changed)."
+}
+
+# Blocks until the server log reports it is listening, failing the build if the
+# process dies first or the line never appears. Shared by the fresh-install and
+# upgrade smoke passes.
+wait_for_started() {
+  local log="$1" pid="$2" i=0
+  until grep -q 'Started MAGE server' "$log" 2>/dev/null; do
+    kill -0 "$pid" 2>/dev/null || {
+      cat "$log" >&2
+      fail "Server exited before reaching its listening state."
+    }
+    i=$((i + 1))
+    if [[ "$i" -ge 180 ]]; then
+      cat "$log" >&2
+      fail "Server smoke test timed out."
+    fi
+    sleep 1
+  done
+}
+
+# Waits until no TCP socket (listening, or lingering in `TIME_WAIT` from the
+# previous pass's client connection) still holds the given port, so the next
+# server can rebind it after the old one was killed. Bounded, so a stuck socket
+# cannot hang the build; if `lsof` is unavailable the loop simply falls
+# through.
+wait_for_port_clear() {
+  local port="$1" i=0
+  while lsof -nP -iTCP:"$port" >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [[ "$i" -ge 30 ]]; then break; fi
+    sleep 1
+  done
 }
 
 version=""
@@ -303,8 +453,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$version" ]] || fail 'Missing --version.'
-[[ -n "$url" || -n "$archive" ]] || fail 'Missing --url or --archive.'
+[[ -n "$version" ]] || fail "Missing --version."
+[[ -n "$url" || -n "$archive" ]] || fail "Missing --url or --archive."
 
 assert_safe_version "$version"
 app_version="$(numeric_app_version "$version")"
@@ -385,6 +535,13 @@ echo "Replacing '$(basename "$old_sqlite")' with sqlite-jdbc '$SQLITE_JDBC_VERSI
 rm -f "$old_sqlite"
 curl -fSL "$SQLITE_JDBC_URL" -o "$server_src/lib/sqlite-jdbc-$SQLITE_JDBC_VERSION.jar"
 
+# Verify the configuration seeding transform still holds for this release (see
+# `verify_config_transform`): a configuration-format change that would break
+# the `<server>` merge fails the build here.
+echo "Verifying the configuration seeding transform."
+verify_config_transform "$server_src/config/config.xml" "$server_src/plugins" \
+  "$work_dir/config-guard"
+
 # Tame the "What's new" page. The bundled runtime has no JavaFX, so the patch
 # makes `MageFrame` skip constructing the JavaFX-backed dialog entirely
 # (avoiding a noisy caught initialization failure) and opens the page in the
@@ -407,7 +564,7 @@ apply_patches "$RAW_BASE" "$ref" "$script_dir/patches/xmage" 17 \
 echo "Generating icon."
 icon_src="$work_dir/label-xmage.png"
 unzip -o -j "$client_jar" label-xmage.png -d "$work_dir" >/dev/null
-[[ -f "$icon_src" ]] || fail 'XMage wordmark (label-xmage.png) not found in the client jar.'
+[[ -f "$icon_src" ]] || fail "XMage wordmark (label-xmage.png) not found in the client jar."
 icns="$work_dir/XMage.icns"
 make_icon "$icon_src" "$icns"
 
@@ -417,7 +574,8 @@ make_icon "$icon_src" "$icns"
 # `plugins` holds the card image cache, so it cannot be replaced, and its lone
 # plugin jar has a stable name (the client loads every jar there, so a renamed
 # one would otherwise linger beside the new). The server replaces its
-# version-stamped `plugins` and preserves its edited `config/config.xml`. Its
+# version-stamped `plugins` and refreshes `config/config.xml` from the release
+# while merging the operator's edited `<server>` element back in. Its
 # `extensions` directory (a drop-in for user-installed card sets) is
 # deliberately not seeded: the server creates it on startup, and leaving it
 # unlisted keeps any installed extension across upgrades, the way runtime data
@@ -498,19 +656,7 @@ smoke_log="$work_dir/server-smoke.log"
 mkdir -p "$smoke_home"
 HOME="$smoke_home" "$server_macos/xmage-server-run" >"$smoke_log" 2>&1 &
 smoke_pid=$!
-i=0
-until grep -q 'Started MAGE server' "$smoke_log" 2>/dev/null; do
-  kill -0 "$smoke_pid" 2>/dev/null || {
-    cat "$smoke_log" >&2
-    fail 'Server exited before reaching its listening state.'
-  }
-  i=$((i + 1))
-  if [[ "$i" -ge 180 ]]; then
-    cat "$smoke_log" >&2
-    fail 'Server smoke test timed out.'
-  fi
-  sleep 1
-done
+wait_for_started "$smoke_log" "$smoke_pid"
 
 # Connect a tiny headless client, compiled against the same client `lib/` and
 # run with the same `--add-opens` the bundles ship, to the running server. This
@@ -575,14 +721,60 @@ if ! (cd "$work_dir" && HOME="$smoke_home" "$java_bin" "$XMAGE_ADD_OPENS" \
   ConnectCheck "${server_port:-17171}") \
   >"$connect_log" 2>&1; then
   cat "$connect_log" "$smoke_log" >&2
-  fail 'Headless client could not connect to the server.'
+  fail "Headless client could not connect to the server."
 fi
 
 # The server runs until killed; `wait` reaps it here so the shell does not
 # print an asynchronous job-control notice for the signal.
 kill -9 "$smoke_pid" 2>/dev/null || true
 wait "$smoke_pid" 2>/dev/null || true
-echo "Smoke test passed."
+
+# Second smoke pass: the upgrade path, which the fresh-install pass above never
+# exercises (there `config` and `plugins` seed at the same version and
+# trivially match). Make the seeded working directory look like it came from an
+# older release: rewrite its `config.xml` plugin references to a sentinel
+# version and apply an operator `<server>` edit, then invalidate the version
+# stamp so the next launch re-seeds. The configuration merge must restore the
+# current references (so the essential plugins-only types load again) while
+# keeping the edit. This pass is the regression guard for the upgrade-desync
+# failure the merge prevents.
+echo "Smoke-testing the upgrade path (re-seed over a stale working directory)."
+smoke_workdir="$smoke_home/Library/Application Support/XMage Server"
+upgrade_cfg="$smoke_workdir/config/config.xml"
+[[ -f "$upgrade_cfg" ]] || fail "Seeded 'config.xml' not found at '$upgrade_cfg'."
+# Operator edit: the shipped default plus an offset, so it cannot equal the
+# default and a merge that dropped the edit (falling back to the default) is
+# still caught below.
+upgrade_ai="$(grep -oE 'maxAiOpponents="[0-9]+"' "$upgrade_cfg" | grep -oE '[0-9]+' | head -1)" || true
+upgrade_ai=$((10#${upgrade_ai:-0} + 7))
+stub_jar_versions "$upgrade_cfg" 0.0.0 >"$upgrade_cfg.stale"
+mv "$upgrade_cfg.stale" "$upgrade_cfg"
+set_server_attr "$upgrade_cfg" maxAiOpponents "$upgrade_ai"
+printf 'stale\n' >"$smoke_workdir/.payload-version"
+
+# Wait for the killed first-pass server to release the port before rebinding.
+wait_for_port_clear "${server_port:-17171}"
+upgrade_log="$work_dir/server-upgrade.log"
+HOME="$smoke_home" "$server_macos/xmage-server-run" >"$upgrade_log" 2>&1 &
+smoke_pid=$!
+wait_for_started "$upgrade_log" "$smoke_pid"
+
+# The re-seed must have restored current plugin references and kept the edit.
+! grep -q '0\.0\.0\.jar' "$upgrade_cfg" ||
+  fail "Upgrade re-seed left stale plugin references in 'config.xml'."
+grep -q "maxAiOpponents=\"$upgrade_ai\"" "$upgrade_cfg" ||
+  fail "Upgrade re-seed did not preserve the operator '<server>' edit."
+# No essential plugins-only type failed to load from the re-seeded
+# configuration: the loader logs a `Plugin not Found` warning for a reference
+# it cannot resolve.
+if grep -qE 'Plugin not Found: .*mage-(player-human|game-twoplayerduel|deck-constructed)' \
+  "$upgrade_log"; then
+  cat "$upgrade_log" >&2
+  fail "An essential plugin failed to load after the simulated upgrade."
+fi
+kill -9 "$smoke_pid" 2>/dev/null || true
+wait "$smoke_pid" 2>/dev/null || true
+echo "Smoke tests passed."
 
 dmg="$out_dir/XMage-$version-arm64.dmg"
 sha="$(make_dmg XMage "$dmg" "$client_app" "$server_app")"
