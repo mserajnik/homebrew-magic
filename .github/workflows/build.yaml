@@ -95,8 +95,9 @@ jobs:
         run: brew install imagemagick
 
       # Pass the matrix values through the environment rather than
-      # interpolating `${{ ... }}` into the script, so an upstream-derived value
-      # (notably the XMage asset URL) can never be substituted into the shell.
+      # interpolating `${{ ... }}` into the script, so an upstream-derived
+      # value (notably the XMage asset URL) can never be substituted into the
+      # shell.
       - name: Build app bundles and disk image
         env:
           APP: ${{ matrix.app }}

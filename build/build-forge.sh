@@ -113,8 +113,8 @@ process_launcher() {
   cat >"$macos/$name" <<'WRAP'
 #!/bin/sh
 
-# Run Forge from a writable copy of its game data so every feature (including
-# the Adventure Editor) can save. The bundle ships `res/` read-only; mirror it
+# Runs Forge from a writable copy of its game data so every feature (including
+# the Adventure Editor) can save. The bundle ships `res/` read-only; mirrors it
 # into the user's Forge data directory, refreshing on a version change. For
 # Adventure Mode the `disable-adventure-chdir` patch keeps this working
 # directory; LWJGL would otherwise change it to the bundle's read-only
@@ -246,8 +246,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$version" ]] || fail 'Missing --version.'
-[[ -n "$url" || -n "$archive" ]] || fail 'Missing --url or --archive.'
+[[ -n "$version" ]] || fail "Missing --version."
+[[ -n "$url" || -n "$archive" ]] || fail "Missing --url or --archive."
 
 assert_safe_version "$version"
 app_version="$(numeric_app_version "$version")"
@@ -315,9 +315,9 @@ tar xf "$archive" -C "$stage"
 desktop_jar="$(find "$stage" -maxdepth 1 -name 'forge-gui-desktop-*-jar-with-dependencies.jar' | head -1)"
 adventure_jar="$(find "$stage" -maxdepth 1 -name 'forge-gui-mobile-dev-*-jar-with-dependencies.jar' | head -1)"
 editor_jar="$(find "$stage" -maxdepth 1 -name 'adventure-editor-jar-with-dependencies.jar' | head -1)"
-[[ -n "$desktop_jar" ]] || fail 'Desktop jar not found in archive.'
-[[ -n "$adventure_jar" ]] || fail 'Adventure Mode jar not found in archive.'
-[[ -n "$editor_jar" ]] || fail 'Adventure Editor jar not found in archive.'
+[[ -n "$desktop_jar" ]] || fail "Desktop jar not found in archive."
+[[ -n "$adventure_jar" ]] || fail "Adventure Mode jar not found in archive."
+[[ -n "$editor_jar" ]] || fail "Adventure Editor jar not found in archive."
 mv "$desktop_jar" "$stage/forge-desktop.jar"
 mv "$adventure_jar" "$stage/forge-adventure-mode.jar"
 mv "$editor_jar" "$stage/forge-adventure-editor.jar"
@@ -475,7 +475,7 @@ while kill -0 "$smoke_pid" 2>/dev/null; do
   if [[ "$i" -ge 180 ]]; then
     kill -9 "$smoke_pid" 2>/dev/null || true
     cat "$smoke_log" >&2
-    fail 'Desktop launcher smoke test timed out.'
+    fail "Desktop launcher smoke test timed out."
   fi
   sleep 1
 done

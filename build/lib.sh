@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
-
 # SPDX-FileCopyrightText: 2026 Michael Serajnik <https://github.com/mserajnik>
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+# shellcheck shell=bash
 
 # Shared helpers for the per-app build scripts (`build-forge.sh` and
 # `build-xmage.sh`). Sourced, not executed; it defines functions and sets no
@@ -140,7 +140,7 @@ assert_upstream_constructs() {
   if ((${#missing[@]} > 0)); then
     printf 'Upstream no longer contains a construct this tap relies on:\n' >&2
     printf '  - %s\n' "${missing[@]}" >&2
-    fail 'Review the upstream changes and adjust the packaging.'
+    fail "Review the upstream changes and adjust the packaging."
   fi
 }
 
