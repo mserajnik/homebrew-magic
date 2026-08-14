@@ -34,7 +34,11 @@ keep_xmage=3
 # search recursively by name.
 dmg_for() {
   local prefix="$1" version="$2"
-  find artifacts -type f -name "$prefix-$version-arm64.dmg" -print -quit 2>/dev/null
+  # `download-artifact` creates nothing when every build failed, and `find` on
+  # a missing start path exits 1, which would abort the script under `set -e`
+  # before any channel reports why it was skipped.
+  [[ -d artifacts ]] || return 0
+  find artifacts -type f -name "$prefix-$version-arm64.dmg" -print -quit
 }
 
 # Publishes (or re-publishes) a release with the given disk images.

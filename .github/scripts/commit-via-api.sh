@@ -7,9 +7,9 @@
 # `createCommitOnBranch` mutation. The resulting commit is signed by GitHub
 # server-side, which is what gives it the "Verified" badge on the web UI; a
 # plain `git commit && git push` over `GITHUB_TOKEN` produces an unsigned
-# commit instead. Only files that actually changed against `HEAD` are included
-# in the commit, so this is safe to call unconditionally after a step that may
-# or may not have edited a file.
+# commit instead. Only files that actually changed in the working tree are
+# included in the commit, so this is safe to call unconditionally after a step
+# that may or may not have edited a file.
 
 set -euo pipefail
 

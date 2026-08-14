@@ -17,9 +17,8 @@
 # are pulled in via the jar manifest's `Class-Path`. jpackage's default
 # launcher runs `java -jar` and would honor that manifest; passing
 # `--main-class` instead makes it run `java -cp <every jar in the input>`, so
-# the bundled `lib/` directory is authoritative and the manifest is irrelevant.
-# This also lets the `sqlite-jdbc` swap below take effect (see
-# `SQLITE_JDBC_VERSION`).
+# the bundled `lib/` directory is authoritative (upstream's manifest still
+# names the jars it moved to `plugins/`, which the JVM silently skips).
 #
 # XMage resolves its resources and writes its data (the card database, the card
 # image cache, logs) relative to the working directory. The bundles ship those
@@ -53,16 +52,6 @@ SERVER_HEAP="-Xmx1024m"
 MAGICK="${MAGICK:-magick}"
 RAW_BASE="https://raw.githubusercontent.com/magefree/mage"
 
-# XMage bundles `sqlite-jdbc` 3.32.3.2 (July 2020), whose only macOS native
-# library is `x86_64`; the official launcher ships an `x86_64` runtime and runs
-# it under Rosetta. This tap bundles a native `arm64` runtime, so that
-# version's server crashes loading its `user_stats` database. Swap in a current
-# `sqlite-jdbc`, which ships an `arm64` native, before packaging the server.
-# This is the only upstream jar this build replaces; the swap below fails the
-# build if no `sqlite-jdbc` jar is present to replace.
-SQLITE_JDBC_VERSION="3.50.3.0"
-SQLITE_JDBC_URL="https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc/$SQLITE_JDBC_VERSION/sqlite-jdbc-$SQLITE_JDBC_VERSION.jar"
-
 # The client and server talk over JBoss Remoting, whose serialization reflects
 # into `java.io.ObjectOutputStream` internals. Upstream runs on Java 8, where
 # that is allowed; on the bundled Java 25 it is blocked by default and the
@@ -93,8 +82,7 @@ make_icon() {
 # bundle path. Only `lib/` is the jpackage input, so only the dependency jars
 # land on the classpath; the resource directories and files XMage reads
 # relative to its working directory are copied into `Resources/payload/` for
-# the wrapper to seed (they are not jars and must stay off the classpath,
-# notably the server plugin jars it discovers under `plugins/`).
+# the wrapper to seed, notably the server plugin jars under `plugins/`.
 package_component() {
   local app_name="$1" src="$2" main_jar="$3" main_class="$4" heap="$5"
   local identifier="$6" description="$7"
@@ -139,8 +127,7 @@ package_component() {
   mkdir -p "$payload"
   # Fail loudly if a resource we depend on is gone: an upstream layout change
   # that drops or renames one of these must get our attention, not silently
-  # ship a bundle missing it (the server smoke test would still pass without,
-  # say, the plugins the server loads at runtime).
+  # ship a bundle missing it.
   local item
   for item in "${payload_items[@]}"; do
     [[ -e "$src/$item" ]] ||
@@ -157,14 +144,13 @@ package_component() {
 # script how to refresh it on a version change:
 #
 # - m  Merge (ditto): overwrite same-named files but leave unlisted siblings
-#   alone. Used for everything that shares a directory with user-generated
-#   data, notably the client's `plugins` (the card image cache lives under
-#   `plugins/images/`) and `backgrounds` / `sample-decks` (user additions
-#   stay).
+#   alone. Used for the client's directories, where a leftover file is harmless
+#   and a removed one would cost user data (the card image cache lives under
+#   `plugins/images/`).
 # - r  Replace (remove, then copy): the directory is a pure read-only template,
 #   so stale files must go. Used for the server's `plugins`, whose jar names
 #   embed the XMage version; a plain merge would leave the previous version's
-#   jars beside the new ones and confuse plugin loading.
+#   jars beside the new ones.
 # - c  Configuration directory: install the shipped defaults wholesale, then
 #   merge the operator-editable `<server>` element from any existing
 #   `config.xml` back on top (see `merge_server_config`). Used for the server's
@@ -321,35 +307,27 @@ set_server_attr() {
 }
 
 # Fails the build unless the configuration seeding transform still holds for
-# this release. Asserts the configuration-format invariants
-# `merge_server_config` depends on (exactly one `<server>` element; plugin
-# references versioned `mage-...-<version>.jar`, all at the version the
-# `plugins/` jars carry), then round-trips a synthetic stale configuration
-# through the real merge: a configuration the merge builds from a stale user
-# copy (old-version references plus probe `<server>` edits) must equal the
-# fresh configuration with only those probes applied. That proves the merge
-# takes content and references from the fresh release while carrying every
-# operator `<server>` value across. It is deterministic and needs no JVM, so an
-# upstream configuration-format change fails here rather than silently breaking
-# a user's next upgrade.
+# this release. Asserts two configuration-format invariants (exactly one
+# `<server>` element; plugin references versioned `mage-...-<version>.jar`),
+# then round-trips a synthetic stale configuration through the real merge: a
+# configuration the merge builds from a stale user copy (old-version references
+# plus probe `<server>` edits) must equal the fresh configuration with only
+# those probes applied. That proves the merge takes content and references from
+# the fresh release while carrying every operator `<server>` value across. It
+# is deterministic and needs no JVM, so an upstream configuration-format change
+# fails here rather than silently breaking a user's next upgrade.
 verify_config_transform() {
-  local cfg="$1" plugins_dir="$2" work="$3"
+  local cfg="$1" work="$2"
   mkdir -p "$work"
 
   [[ "$(grep -c '<server[[:space:]>]' "$cfg")" -eq 1 ]] ||
     fail "'config.xml' no longer has exactly one '<server>' element; the seeding merge assumptions changed."
 
-  local cfg_vers plug_vers
-  cfg_vers="$(grep -oE 'jar="mage-[A-Za-z-]+-[0-9][0-9.]*[0-9]\.jar"' "$cfg" |
-    grep -oE '[0-9][0-9.]*[0-9]' | LC_ALL=C sort -u)"
-  [[ -n "$cfg_vers" ]] ||
+  # `stub_jar_versions` rewrites these references to build the stale copy, so
+  # without one it would quietly do nothing and the round-trip below would pass
+  # without proving anything.
+  grep -qE 'jar="mage-[A-Za-z-]+-[0-9][0-9.]*[0-9]\.jar"' "$cfg" ||
     fail "No versioned plugin jar references in 'config.xml'; upstream configuration format changed."
-  [[ "$(printf '%s\n' "$cfg_vers" | grep -c .)" -eq 1 ]] ||
-    fail "'config.xml' plugin references span multiple versions: $(printf '%s' "$cfg_vers" | tr '\n' ' ')."
-  plug_vers="$(find "$plugins_dir" -maxdepth 1 -name 'mage-*.jar' -exec basename {} \; |
-    grep -oE '[0-9][0-9.]*[0-9]' | LC_ALL=C sort -u)"
-  [[ "$cfg_vers" == "$plug_vers" ]] ||
-    fail "'config.xml' plugin version ($cfg_vers) does not match the 'plugins/' jars ($plug_vers)."
 
   # Probe several `<server>` attributes so the round-trip proves each is
   # carried. For each, first confirm the attribute exists in the `<server>`
@@ -362,7 +340,7 @@ verify_config_transform() {
   # unconditionally when `config.xml` lacks one.
   local expected="$work/expected.xml" stale="$work/stale.xml" merged="$work/merged.xml"
   local check="$work/probe-check.xml" base="$work/probe-base.xml"
-  local probes=(serverName=ROUNDTRIP_PROBE port=65500 maxAiOpponents=7 maxSecondsIdle=321)
+  local probes=(maxAiOpponents=7 maxSecondsIdle=321 port=65500 serverName=ROUNDTRIP_PROBE)
   local p
   cp "$cfg" "$base"
   set_server_attr "$base" __rt_absent__ x
@@ -398,6 +376,30 @@ wait_for_started() {
     fi
     sleep 1
   done
+}
+
+# Fails the build if the server log reports a plugin it could not load. The
+# server's plugin types live only in `plugins/`, with no classpath fallback,
+# and the loader registers nothing for a reference it cannot resolve; the
+# server counts configured types rather than loaded ones and reaches its
+# listening state regardless, so neither `wait_for_started` nor the client
+# connection notices. The log is the only signal. Shared by the fresh-install
+# and upgrade passes.
+assert_no_plugin_failures() {
+  local log="$1" context="$2"
+  # Double-quoted because the loader's messages contain an apostrophe. Beyond
+  # the loader's own errors, two collaborators report a dropped type and
+  # nothing else would: upstream's zero-game-types error, the only signal when
+  # the game-types collection parses but yields no entries, and `CubeFactory`,
+  # the one factory that instantiates at startup rather than storing the class.
+  local pattern="Can't load plugin"
+  pattern+="|Error loading (game type |tournament type )?plugin "
+  pattern+="|ERROR, can't load any game types"
+  pattern+="|Can't create draft cube named by "
+  if grep -qE "$pattern" "$log"; then
+    cat "$log" >&2
+    fail "Server plugins did not load cleanly $context."
+  fi
 }
 
 # Waits until no TCP socket (listening, or lingering in `TIME_WAIT` from the
@@ -471,6 +473,26 @@ out_dir="$(cd "$out_dir" && pwd)"
 work_dir="$(mktemp -d)"
 trap '[ -n "${smoke_pid:-}" ] && kill -9 "$smoke_pid" 2>/dev/null || true; rm -rf "$work_dir"' EXIT INT TERM
 
+# Verify the upstream log messages `assert_no_plugin_failures` matches on,
+# before downloading anything. A plugin the server cannot load is reported only
+# in its log (it starts and binds regardless), so that check is the whole
+# guard, and a renamed message, or one demoted below `info`, would turn it into
+# a silent no-op rather than a failure. The `logger.error(` prefix is part of
+# most signatures for that reason; the missing-jar message is the exception,
+# because upstream wraps that call and these are matched a line at a time.
+PLUGIN_UTIL_SRC="Mage.Server/src/main/java/mage/server/util/PluginUtil.java"
+MAIN_SRC="Mage.Server/src/main/java/mage/server/Main.java"
+CUBE_FACTORY_SRC="Mage.Server/src/main/java/mage/server/draft/CubeFactory.java"
+echo "Verifying upstream source constructs."
+assert_upstream_constructs "$RAW_BASE" "$ref" \
+  "$PLUGIN_UTIL_SRC=logger.error(String.format(\"Can't load plugin" \
+  "$PLUGIN_UTIL_SRC=\"Can't load plugin '" \
+  "$PLUGIN_UTIL_SRC=logger.error(\"Error loading plugin " \
+  "$PLUGIN_UTIL_SRC=logger.error(\"Error loading game type plugin " \
+  "$PLUGIN_UTIL_SRC=logger.error(\"Error loading tournament type plugin " \
+  "$MAIN_SRC=logger.error(\"ERROR, can't load any game types" \
+  "$CUBE_FACTORY_SRC=logger.error(\"Can't create draft cube named by "
+
 echo "Preparing staging input for XMage '$version'."
 stage="$work_dir/stage"
 mkdir -p "$stage"
@@ -499,11 +521,11 @@ server_jar="$(find "$server_src/lib" -maxdepth 1 -name 'mage-server-*.jar' | hea
 # unhandled. Compare the version-stripped jar names against a recorded
 # baseline: a removed name fails the build; an added name only warns, so a
 # routine upstream dependency addition does not break the build (versions are
-# stripped so a plain bump is never flagged). Runs before the `sqlite-jdbc`
-# swap below so it sees the pristine upstream set (the swap keeps the
-# `sqlite-jdbc` name regardless). Regenerate the baseline by running the two
-# find pipelines below and writing their `LC_ALL=C sort -u` output to the
-# baseline file.
+# stripped so a plain bump is never flagged). Only `lib/` is enumerated: those
+# jars are the classpath, while a `plugins/` jar the server cannot load is
+# reported by `assert_no_plugin_failures` instead. Regenerate the baseline by
+# running the two find pipelines below and writing their `LC_ALL=C sort -u`
+# output to the baseline file.
 echo "Checking the dependency baseline."
 lib_baseline="$script_dir/xmage-lib-baseline.txt"
 [[ -f "$lib_baseline" ]] || fail "Missing dependency baseline: $lib_baseline."
@@ -526,36 +548,24 @@ if [[ -n "$lib_removed" ]]; then
   fail "A relied-on dependency was removed upstream; review it and update '$lib_baseline'."
 fi
 
-# Swap the outdated `sqlite-jdbc` for a current one with an `arm64` native
-# library.
-old_sqlite="$(find "$server_src/lib" -maxdepth 1 -name 'sqlite-jdbc-*.jar' | head -1)"
-[[ -n "$old_sqlite" ]] ||
-  fail "Expected an sqlite-jdbc jar in 'mage-server/lib'; upstream layout changed."
-echo "Replacing '$(basename "$old_sqlite")' with sqlite-jdbc '$SQLITE_JDBC_VERSION' (arm64 native)."
-rm -f "$old_sqlite"
-curl -fSL "$SQLITE_JDBC_URL" -o "$server_src/lib/sqlite-jdbc-$SQLITE_JDBC_VERSION.jar"
-
 # Verify the configuration seeding transform still holds for this release (see
 # `verify_config_transform`): a configuration-format change that would break
 # the `<server>` merge fails the build here.
 echo "Verifying the configuration seeding transform."
-verify_config_transform "$server_src/config/config.xml" "$server_src/plugins" \
-  "$work_dir/config-guard"
+verify_config_transform "$server_src/config/config.xml" "$work_dir/config-guard"
 
-# Tame the "What's new" page. The bundled runtime has no JavaFX, so the patch
-# makes `MageFrame` skip constructing the JavaFX-backed dialog entirely
-# (avoiding a noisy caught initialization failure) and opens the page in the
-# system browser only on an explicit request (the "Show what's new" button),
-# not the automatic check on every launch. `MageFrame` lives in the client jar;
-# since that jar is not fat, the recompile classpath is the whole client
-# `lib/`.
+# Tame the "what's new" page. JavaFX cannot run here (no macOS JavaFX in the
+# bundle or the runtime), so the patch makes `MageFrame` skip constructing the
+# JavaFX-backed dialog entirely (avoiding a noisy caught initialization
+# failure) and opens the page in the system browser only on an explicit request
+# (the "show what's new" button), not the automatic check on every launch.
+# `MageFrame` lives in the client jar; since that jar is not fat, the recompile
+# classpath is the whole client `lib/`.
 # Upstream's source is Java 8, but `--release 8` is obsolete on the bundled JDK
 # 25 (it warns, and a future JDK will drop it) while `--release 25` would
 # needlessly target newer bytecode than the Java 8 classes this recompiled file
 # sits beside; 17 is the floor: the lowest current LTS the JDK 25 toolchain
-# accepts without the obsolescence warning. The patch also drops an unused
-# `org.junit` import so the source compiles without the test dependency, which
-# the distribution does not ship.
+# accepts without the obsolescence warning.
 echo "Patching the What's new page."
 apply_patches "$RAW_BASE" "$ref" "$script_dir/patches/xmage" 17 \
   "$client_src/lib/*" "$javac_bin" "$jar_bin" "$work_dir" \
@@ -580,10 +590,13 @@ make_icon "$icon_src" "$icns"
 # deliberately not seeded: the server creates it on startup, and leaving it
 # unlisted keeps any installed extension across upgrades, the way runtime data
 # under `db/` is kept.
-client_items=(backgrounds config plugins sample-decks)
-server_items=(config plugins server.msg.txt)
-client_seed=(backgrounds:m config:m plugins:m sample-decks:m)
+client_seed=(backgrounds:m config:m plugins:m sample-decks:m sounds:m)
 server_seed=(config:c plugins:r server.msg.txt:m)
+# The payload item names are the seed list with its policies stripped, so the
+# two cannot drift: an item copied into the bundle but never seeded would be
+# shipped where nothing reads it.
+client_items=("${client_seed[@]%:*}")
+server_items=("${server_seed[@]%:*}")
 
 client_app="$(package_component XMage "$client_src" "$client_jar" \
   mage.client.MageFrame "$CLIENT_HEAP" "$BUNDLE_ID.client" \
@@ -644,12 +657,11 @@ adhoc_sign_deep "$server_app"
 # step the Terminal launcher would run) with `$HOME` redirected to a throwaway
 # directory, then connect a headless client to it. Reaching the listening line
 # confirms what nothing else in the build exercises: the bundled runtime
-# starts, the seeded working directory is found, the swapped `sqlite-jdbc`
-# loads its `arm64` native (the `user_stats` database is opened just before
-# this line), the server plugins load, and the port binds. The client
-# connection then confirms the one thing the server alone cannot: that the
-# bundled JDK's `--add-opens` still lets the JBoss Remoting serialization work
-# end to end, so a client can connect.
+# starts, the seeded working directory is found, `sqlite-jdbc` loads its
+# `arm64` native (the `user_stats` database is opened just before this line),
+# and the port binds. The client connection then confirms the one thing the
+# server alone cannot: that the bundled JDK's `--add-opens` still lets the
+# JBoss Remoting serialization work end to end, so a client can connect.
 echo "Smoke-testing the server (headless startup and a client connection)."
 smoke_home="$work_dir/smoke-home"
 smoke_log="$work_dir/server-smoke.log"
@@ -657,6 +669,7 @@ mkdir -p "$smoke_home"
 HOME="$smoke_home" "$server_macos/xmage-server-run" >"$smoke_log" 2>&1 &
 smoke_pid=$!
 wait_for_started "$smoke_log" "$smoke_pid"
+assert_no_plugin_failures "$smoke_log" "on a fresh install"
 
 # Connect a tiny headless client, compiled against the same client `lib/` and
 # run with the same `--add-opens` the bundles ship, to the running server. This
@@ -735,9 +748,9 @@ wait "$smoke_pid" 2>/dev/null || true
 # older release: rewrite its `config.xml` plugin references to a sentinel
 # version and apply an operator `<server>` edit, then invalidate the version
 # stamp so the next launch re-seeds. The configuration merge must restore the
-# current references (so the essential plugins-only types load again) while
-# keeping the edit. This pass is the regression guard for the upgrade-desync
-# failure the merge prevents.
+# current references (so the plugin types load again) while keeping the edit.
+# This pass is the regression guard for the upgrade-desync failure the merge
+# prevents.
 echo "Smoke-testing the upgrade path (re-seed over a stale working directory)."
 smoke_workdir="$smoke_home/Library/Application Support/XMage Server"
 upgrade_cfg="$smoke_workdir/config/config.xml"
@@ -764,14 +777,10 @@ wait_for_started "$upgrade_log" "$smoke_pid"
   fail "Upgrade re-seed left stale plugin references in 'config.xml'."
 grep -q "maxAiOpponents=\"$upgrade_ai\"" "$upgrade_cfg" ||
   fail "Upgrade re-seed did not preserve the operator '<server>' edit."
-# No essential plugins-only type failed to load from the re-seeded
-# configuration: the loader logs a `Plugin not Found` warning for a reference
-# it cannot resolve.
-if grep -qE 'Plugin not Found: .*mage-(player-human|game-twoplayerduel|deck-constructed)' \
-  "$upgrade_log"; then
-  cat "$upgrade_log" >&2
-  fail "An essential plugin failed to load after the simulated upgrade."
-fi
+# No plugin failed to load from the re-seeded configuration, which is what
+# proves the replaced `plugins/` and the refreshed `config.xml` still line up
+# after an upgrade.
+assert_no_plugin_failures "$upgrade_log" "after the simulated upgrade"
 kill -9 "$smoke_pid" 2>/dev/null || true
 wait "$smoke_pid" 2>/dev/null || true
 echo "Smoke tests passed."

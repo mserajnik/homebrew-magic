@@ -4,8 +4,7 @@
 # shellcheck shell=bash
 
 # Shared helpers sourced by the other scripts in this directory: error
-# handling, environment variable checks, output writers for GitHub Actions, and
-# whitespace trimming.
+# handling, environment variable checks, and output writers for GitHub Actions.
 
 fail() {
   echo "ERROR: $*" >&2
@@ -18,15 +17,6 @@ require_env() {
   if [[ -z "${!name:-}" ]]; then
     fail "Environment variable '$name' is required."
   fi
-}
-
-trim() {
-  local value="$1"
-
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-
-  printf '%s' "$value"
 }
 
 write_output() {

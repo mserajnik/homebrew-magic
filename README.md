@@ -150,10 +150,8 @@ brew upgrade --cask forge
 - XMage Server opens in a Terminal window. macOS asks to allow incoming network
   connections the first time it runs; the client connects to localhost by
   default.
-- The "What's new" news page no longer pops up on launch: it needs JavaFX,
-  which the bundled runtime omits, and upstream would otherwise open it in your
-  browser every launch. The "Show what's new" button still opens it in your
-  browser on demand. Nothing else depends on JavaFX.
+- The news page no longer pops up on launch; the _Show what's new_ button still
+  opens it in your browser on demand.
 - Plain `brew uninstall` removes the apps but leaves your data in `~/Library`.
   To remove everything, including the downloaded card images, card database,
   and preferences:

@@ -1,16 +1,6 @@
-diff --git a/Mage.Client/src/main/java/mage/client/MageFrame.java b/Mage.Client/src/main/java/mage/client/MageFrame.java
-index 16c710e..dbf2bf1 100644
 --- a/Mage.Client/src/main/java/mage/client/MageFrame.java
 +++ b/Mage.Client/src/main/java/mage/client/MageFrame.java
-@@ -55,7 +55,6 @@ import net.java.truevfs.access.TArchiveDetector;
- import net.java.truevfs.access.TConfig;
- import net.java.truevfs.kernel.spec.FsAccessOption;
- import org.apache.log4j.Logger;
--import org.junit.Assert;
- import org.mage.card.arcane.ManaSymbols;
- import org.mage.card.arcane.SvgUtils;
- import org.mage.plugins.card.images.DownloadPicturesService;
-@@ -297,14 +296,12 @@ public class MageFrame extends javax.swing.JFrame implements MageClient {
+@@ -296,14 +296,13 @@ public class MageFrame extends javax.swing.JFrame implements MageClient {
          errorDialog.setLocation(100, 100);
          desktopPane.add(errorDialog, errorDialog.isModal() ? JLayeredPane.MODAL_LAYER : JLayeredPane.PALETTE_LAYER);
  
@@ -22,16 +12,17 @@ index 16c710e..dbf2bf1 100644
 -            LOGGER.error("JavaFX is not supported by your system. What's new page will be disabled.", e);
 -            this.whatsNewDialog = null;
 -        }
-+        // Disable the JavaFX-backed "What's new" viewer for Homebrew
-+        // distribution: the bundled runtime has no JavaFX, and constructing
-+        // the dialog would attempt it and throw (a noisy caught failure). Skip
-+        // it; `showWhatsNewDialog` below falls back to the system browser, but
-+        // only for an explicit request, not the automatic check on startup.
++        // Disable the JavaFX-backed "what's new" viewer for Homebrew
++        // distribution: JavaFX cannot run here (no macOS JavaFX in the bundle
++        // or the runtime), so constructing the dialog would throw (a noisy
++        // caught failure). Skip it; `showWhatsNewDialog` below falls back to
++        // the system browser, but only for an explicit request, not the
++        // automatic check on startup.
 +        this.whatsNewDialog = null;
  
          PING_SENDER_EXECUTOR.scheduleAtFixedRate(SessionHandler::ping, TablesPanel.PING_SERVER_SECS, TablesPanel.PING_SERVER_SECS, TimeUnit.SECONDS);
  
-@@ -1971,10 +1968,12 @@ public class MageFrame extends javax.swing.JFrame implements MageClient {
+@@ -1970,10 +1969,12 @@ public class MageFrame extends javax.swing.JFrame implements MageClient {
  
      public void showWhatsNewDialog(boolean forceToShowPage) {
          if (whatsNewDialog != null) {
@@ -42,7 +33,7 @@ index 16c710e..dbf2bf1 100644
 -            // system browser
 +        } else if (forceToShowPage) {
 +            // No JavaFX viewer, so open the page in the system browser, but
-+            // only on an explicit request (the "Show what's new" button),
++            // only on an explicit request (the "show what's new" button),
 +            // never the automatic check on startup.
              AppUtil.openUrlInSystemBrowser(WhatsNewDialog.WHATS_NEW_PAGE);
          }

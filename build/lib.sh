@@ -117,10 +117,9 @@ apply_patches() {
 # Fails the build if an upstream source construct the packaging relies on but
 # does not patch has changed or gone. Each argument is a
 # `<source-relative-path>=<fixed-string>` pair; the file is fetched at the ref
-# and grepped for the string. These constructs are compiled away in the
-# prebuilt artifact, so a structural check of the download cannot see them, and
-# they are not patched, so `apply_patches` has no tripwire for them; fetching
-# the source is the only way to catch a change.
+# and grepped for the string. They are not patched, so `apply_patches` has no
+# tripwire for them, and nothing else in the build inspects them; fetching the
+# source is the only way to catch a change.
 assert_upstream_constructs() {
   local raw_base="$1" ref="$2"
   shift 2

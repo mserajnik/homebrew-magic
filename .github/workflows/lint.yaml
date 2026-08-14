@@ -10,6 +10,16 @@ on:
   pull_request:
 
 jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
   shfmt:
     name: shfmt
     runs-on: ubuntu-24.04

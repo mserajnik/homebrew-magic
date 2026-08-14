@@ -139,6 +139,11 @@ copy_res() {
   /usr/bin/ditto "$appdir/res" "$tmp"
   rm -rf "$workdir/res"
   mv "$tmp" "$workdir/res"
+  # The release notes and the help menu's license item resolve these against
+  # the working directory, so they have to sit beside `res/`.
+  for f in CHANGES.txt LICENSE.txt; do
+    if [ -f "$appdir/$f" ]; then cp -f "$appdir/$f" "$workdir/$f"; fi
+  done
   printf '%s' "$res_version" >"$stamp"
 }
 
@@ -324,15 +329,25 @@ mv "$editor_jar" "$stage/forge-adventure-editor.jar"
 [[ -d "$stage/res" ]] || fail "No 'res' directory found in the archive."
 
 # jpackage copies the entire input into the bundle and puts every jar on the
-# classpath, so keep only the game resources, the three fat jars, and the
-# license; drop the upstream platform launchers, documentation, and extra jars.
+# classpath, so keep only the game resources, the three fat jars, and the two
+# text files Forge reads at runtime (the release notes and the help menu's
+# license item); drop the upstream platform launchers, the rest of the
+# documentation, and extra jars.
 find "$stage" -mindepth 1 -maxdepth 1 \
   ! -name res \
   ! -name 'forge-desktop.jar' \
   ! -name 'forge-adventure-mode.jar' \
   ! -name 'forge-adventure-editor.jar' \
+  ! -name 'CHANGES.txt' \
   ! -name 'LICENSE.txt' \
   -exec rm -rf {} +
+
+# The keep-list silently keeps nothing when a name is absent, and the launcher
+# wrapper skips a missing file, so an upstream drop would ship an app whose
+# release notes and license item are broken. Fail loudly instead.
+for f in CHANGES.txt LICENSE.txt; do
+  [[ -f "$stage/$f" ]] || fail "No '$f' in the archive; upstream layout changed."
+done
 
 # Disable Forge's built-in updater. Each patch targets one source file; the
 # desktop classes live in `forge-desktop.jar`, the Adventure Mode prompt in
