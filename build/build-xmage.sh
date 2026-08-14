@@ -566,7 +566,7 @@ verify_config_transform "$server_src/config/config.xml" "$work_dir/config-guard"
 # needlessly target newer bytecode than the Java 8 classes this recompiled file
 # sits beside; 17 is the floor: the lowest current LTS the JDK 25 toolchain
 # accepts without the obsolescence warning.
-echo "Patching the What's new page."
+echo 'Patching the "what'\''s new" page.'
 apply_patches "$RAW_BASE" "$ref" "$script_dir/patches/xmage" 17 \
   "$client_src/lib/*" "$javac_bin" "$jar_bin" "$work_dir" \
   "Mage.Client/src/main/java/mage/client/MageFrame.java:$client_jar"
