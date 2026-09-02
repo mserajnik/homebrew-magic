@@ -126,11 +126,11 @@ brew upgrade --cask forge
 ### Forge-specific notes
 
 - The built-in updater is disabled; update Forge with Homebrew (above) instead.
-- On first launch the app copies its game data into
-  `~/Library/Application Support/Forge` and runs from there, so every feature,
-  including the Adventure Editor's saving, can write. This copy is refreshed
-  automatically when you upgrade to a new Forge version, so the first launch
-  after an install or upgrade takes a few extra seconds.
+- On first launch the app copies its game data into `~/Library/Application
+  Support/Forge` and runs from there, so every feature, including the Adventure
+  Editor's saving, can write. This copy is refreshed automatically when you
+  upgrade to a new Forge version, so the first launch after an install or
+  upgrade takes a few extra seconds.
 - User data (decks, preferences, saves, downloaded card images) lives under
   `~/Library/Application Support/Forge` and `~/Library/Caches/Forge`, and is
   preserved across upgrades.
