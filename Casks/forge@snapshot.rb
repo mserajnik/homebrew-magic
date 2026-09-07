@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 cask "forge@snapshot" do
-  version "2.0.15-SNAPSHOT-09.05"
-  sha256 "ea275cda8af6cf69dda2cb0c40dc2ef56d7422206c5a4f2b55c57132202e5bd2"
+  version "2.0.15-SNAPSHOT-09.06"
+  sha256 "1c8526b89403e50ee34062b2e3847b745d564158916194d8a17df79bd3b28d8b"
 
   url "https://github.com/mserajnik/homebrew-magic/releases/download/forge-snapshot/Forge-#{version}-arm64.dmg"
   name "Forge"
