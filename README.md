@@ -7,12 +7,10 @@
 [![Lint status][badge-lint-status]][badge-lint-status-url]
 [![Build status][badge-build-status]][badge-build-status-url]
 
-> A Homebrew tap for Forge and XMage, two open-source Magic: The Gathering
-> implementations
-
-This tap packages [Forge][forge] and [XMage][xmage] into macOS apps,
-distributed as Homebrew casks, offering a more convenient way to install,
-update, and run these projects than the official methods. It features:
+This Homebrew tap packages [Forge][forge] and [XMage][xmage], two open-source
+Magic: The Gathering implementations, into macOS apps, distributed as Homebrew
+casks, offering a more convenient way to install, update, and run these
+projects than the official methods. It features:
 
 - __Forge in all three modes__: Desktop, Adventure Mode, and the Adventure
   Editor, each installed as its own app.
