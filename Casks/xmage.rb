@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 cask "xmage" do
-  version "1.4.62V1"
-  sha256 "ee76a2beba85e0dedb08b736666ee218833f4855a8c1314c9abac2fd9c0a0013"
+  version "1.4.63V1"
+  sha256 "aa49f1e98361b6391053aadfe4359f2c7e793ccc2b3a9d7a8ae59fa20b048a9b"
 
   url "https://github.com/mserajnik/homebrew-magic/releases/download/xmage-#{version}/XMage-#{version}-arm64.dmg"
   name "XMage"
